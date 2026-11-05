@@ -1,0 +1,24 @@
+# datos privados y binarios pesados (ver README: "Qué no está en este repo")
+fotos/
+renders/
+muebles/
+fab/
+export/
+assets/
+*.glb
+*.gltf.json
+*.hdr
+*.exr
+*.png
+*.jpg
+*.jpeg
+*.mp4
+*.uasset
+*.umap
+.venv/
+__pycache__/
+ue/Apartaestudio/Saved/
+ue/Apartaestudio/Intermediate/
+ue/Apartaestudio/DerivedDataCache/
+ue/Apartaestudio/Content/*
+!ue/Apartaestudio/Content/Python/
