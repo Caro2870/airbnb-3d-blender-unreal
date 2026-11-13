@@ -53,6 +53,46 @@ def leer_ficha():
     return ficha
 
 
+def _juntas(m, size, grout_k=0.72, var=0.10, gap=0.0025, bump=0.25):
+    """Lay the piece grid over a material: joints (grout_k x the piece colour) and a slightly different tone per
+    piece, through one Brick texture in object XY.  Without it the wood-look porcelain read as a continuous plank
+    floor and the 60x60 pieces did not exist (2026-11-13, A/B demo)."""
+    import bpy
+    nt = m.node_tree
+    b = next(n for n in nt.nodes if n.bl_idname == "ShaderNodeBsdfPrincipled")
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    sep = nt.nodes.new("ShaderNodeSeparateXYZ"); nt.links.new(sep.inputs["Vector"], tc.outputs["Object"])
+    comb = nt.nodes.new("ShaderNodeCombineXYZ")
+    nt.links.new(comb.inputs["X"], sep.outputs["X"]); nt.links.new(comb.inputs["Y"], sep.outputs["Y"])
+    br = nt.nodes.new("ShaderNodeTexBrick")
+    br.offset = 0.0
+    br.inputs["Scale"].default_value = 1.0
+    br.inputs["Mortar Size"].default_value = gap
+    br.inputs["Mortar Smooth"].default_value = 0.2
+    br.inputs["Brick Width"].default_value = size[0]
+    br.inputs["Row Height"].default_value = size[1]
+    br.inputs["Color1"].default_value = (1, 1, 1, 1)
+    br.inputs["Color2"].default_value = (1 - var, 1 - var, 1 - var, 1)
+    br.inputs["Mortar"].default_value = (grout_k, grout_k, grout_k, 1)
+    nt.links.new(br.inputs["Vector"], comb.outputs["Vector"])
+    src = b.inputs["Base Color"].links[0].from_socket if b.inputs["Base Color"].is_linked else None
+    mx = nt.nodes.new("ShaderNodeMix"); mx.data_type = 'RGBA'; mx.blend_type = 'MULTIPLY'
+    mx.inputs["Factor"].default_value = 1.0
+    if src is not None:
+        nt.links.new(mx.inputs["A"], src)
+    else:
+        mx.inputs["A"].default_value = tuple(b.inputs["Base Color"].default_value)
+    nt.links.new(mx.inputs["B"], br.outputs["Color"])
+    nt.links.new(b.inputs["Base Color"], mx.outputs["Result"])
+    bp = nt.nodes.new("ShaderNodeBump"); bp.inputs["Strength"].default_value = bump; bp.inputs["Distance"].default_value = 0.002
+    bp.invert = True                                   # joints sink
+    nt.links.new(bp.inputs["Height"], br.outputs["Fac"])
+    if b.inputs["Normal"].is_linked:
+        nt.links.new(bp.inputs["Normal"], b.inputs["Normal"].links[0].from_socket)
+    nt.links.new(b.inputs["Normal"], bp.outputs["Normal"])
+    return m
+
+
 def material(code, slot, pbr):
     """Blender material for a catalogue code in a given slot (walls tile on the YZ plane, floors on XY)."""
     from archviz import materials as _m
@@ -61,13 +101,16 @@ def material(code, slot, pbr):
     rough = 0.15 if c["acabado"] == "brillante" else 0.45
     name = f"{c['marca']}_{code}"
     if c["kind"] == "madera":
-        # wood-look porcelain: scanned oak grain tinted to the swatch, with the 60x60 joints drawn over it
-        return pbr(name, "oak_veneer_01", col, var=0.8, rough=rough, normal=0.3, scale=0.7)
-    grout = tuple(min(1.0, v * 0.9 + 0.08) for v in c["rgb"]) + (1.0,)
+        # wood-look porcelain: scanned oak grain tinted to the swatch, with the 60x60 joints and per-piece tone
+        return _juntas(pbr(name, "oak_veneer_01", col, var=0.8, rough=rough, normal=0.3, scale=0.7), c["size"])
+    # grout darker than the piece (it was 0.9x + 0.08: the same colour, so light tiles showed no joints at all)
+    grout = tuple(v * 0.70 for v in c["rgb"]) + (1.0,)
     plane = 'YZ' if slot != "piso" else 'XY'
     if c["kind"] == "pared":
+        # glazed wall tile: a thin clear coat gives the reflections that tell it from painted plaster
         return _m.tiles(name, col, grout=(0.8, 0.8, 0.78, 1) if c["rgb"][0] < 0.3 else grout, size=c["size"],
-                        gap=0.002, rough=rough, plane=plane, variation=0.03, bump=0.4)
+                        gap=0.003, rough=rough, plane=plane, variation=0.04, bump=0.8,
+                        coat=0.4 if c["acabado"] == "brillante" else 0.0)
     mottle = 0.45 if c["kind"] == "cemento" else 0.15
-    return _m.tiles(name, col, grout=grout, size=c["size"], gap=0.002, rough=rough, plane=plane,
-                    variation=0.05, mottle=mottle, bump=0.15)
+    return _m.tiles(name, col, grout=grout, size=c["size"], gap=0.003, rough=rough, plane=plane,
+                    variation=0.06, mottle=mottle, bump=0.25)
