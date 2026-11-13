@@ -183,6 +183,8 @@ def setup_scene(S):
         _sky.setup_day(S, sun_dir=SUN_DIR, sun_energy=6.0, sun_color=(1.0, 0.76, 0.52), sun_angle=3.0, strength=0.7, clouds=0.4)
     # stills: no motion blur (run.py turns it back on for the film)
     S.render.use_motion_blur = False
+    # keep the synced scene between frames of an animation (A/B video: the 1.3 M triangles were re-synced every frame)
+    S.render.use_persistent_data = True
     luces_pro()
     S.cycles.volume_step_rate = 2.0
     if not os.path.isfile(HDRI):
@@ -264,6 +266,12 @@ def luces_pro():
 
 
 SUN_DIR = (-0.30, 0.93, 0.24)             # unit vector TOWARD the sun: west-ish over the sea, ~14 deg up
+# SOL="x,y,z": sun direction override (normalised).  A/B video (2026-11-13): at 14 deg the parking structure across
+# the street blocks the sun and the room reads flat; ~30 deg lets warm sun patches land on the floor and the bed.
+if os.environ.get("SOL"):
+    _v = [float(t) for t in os.environ["SOL"].split(",")]
+    _n = math.sqrt(sum(t * t for t in _v)) or 1.0
+    SUN_DIR = tuple(t / _n for t in _v)
 SKY = dict(sun_dir=SUN_DIR, sun_energy=6.0, sun_color=(1.0, 0.76, 0.52), strength=0.7, sun_elevation=14)
 
 E = 1.6                                   # eye height above the floor

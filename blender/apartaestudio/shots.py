@@ -17,4 +17,12 @@ SHOTS = [
          wp=[((2.0, 5.2, E), (2.0, 8.5, Z0 + 1.2)), ((2.55, 6.6, E), (2.45, 11.0, Z0 + 1.0)),
              ((2.75, 7.25, E), (1.0, 80.0, Z0 - 1.0)), ((3.35, 7.55, E + 0.1), (6.0, 120.0, Z0 - 2.0))]),
 ]
-BY_NAME = {s['name']: s for s in SHOTS}
+# A/B finish demo (MVP, 2026-11-13): two slow, level moves built from the sales cameras v_cuarto / v_cocina.  Rendered
+# once per finish sheet (ACABADOS_FICHA, HOUSE_FILM_DIR) and cut with a wipe A -> B mid-shot (remoto/montar_ab.py).
+AB_SHOTS = [
+    dict(name='ab_cuarto', sec=4.0, lens=(20, 20), fstop=8, exp=0.0, caption=None, ease=(0.5, 0.5),
+         wp=[((0.55, 2.80, Z0 + 1.05), (2.55, Y_WIN, Z0 + 0.55)), ((0.95, 3.30, Z0 + 1.05), (3.05, Y_WIN, Z0 + 0.50))]),
+    dict(name='ab_cocina', sec=4.0, lens=(24, 24), fstop=8, exp=0.8, caption=None, ease=(0.5, 0.5),
+         wp=[((1.65, 2.95, Z0 + 1.25), (0.0, 1.15, Z0 + 1.15)), ((1.52, 2.30, Z0 + 1.25), (0.0, 0.75, Z0 + 1.10))]),
+]
+BY_NAME = {s['name']: s for s in SHOTS + AB_SHOTS}
