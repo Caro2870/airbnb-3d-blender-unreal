@@ -8,6 +8,7 @@ brown-tinted glass table, white lantern.  Office chair (photo 5): black mesh bac
 """
 import math
 import os
+import random
 
 import bpy
 
@@ -17,7 +18,7 @@ from archviz.mesh import MB
 from archviz import materials as _m
 
 REPLACES = ["Bed", "Cushions_Blue", "Balcony_Set", "Office_Chair"]
-BED_L, BED_W = 1.95, 1.40
+BED_L, BED_W = 1.95, 1.20       # semidoble: photo 5 legs 1.97 tiles apart (~1.16 m) and the desk beside it
 HX = W - 0.1                     # head end of the bed (headboard on the east wall)
 FX = HX - BED_L                  # foot end
 MATT_Z0, MATT_Z1 = Z0 + 0.28, Z0 + 0.52
@@ -115,6 +116,12 @@ def _lathe(name, profile, mat, seg=48, u_repeat=1):
     return ob
 
 
+# With the library on (biblioteca.py), the coded quilt, runner, pillows and cushions are deleted right after being
+# built (CAMA_QUITAR / SOFA_QUITAR).  Their cloth simulations were 38 of the 59 s of every build: skip them.
+CON_BIBLIO = (os.environ.get("BIBLIO", "1") != "0"
+              and os.path.isfile(os.path.join(ASSETS, "blenderkit", "biblioteca.blend")))
+
+
 def _mats(M):
     return dict(
         quilt=_quilt("Colcha_Acolchada", (0.86, 0.86, 0.84, 1)),
@@ -172,9 +179,18 @@ def _grid(name, x0, x1, y0, y1, z, step, mat, tile=None):
     return ob
 
 
-def _drape(ob, colliders, frames=48, bend=6.0, mass=0.4, thick=0.01):
-    """Drop the cloth onto the colliders, freeze the final shape, then give it thickness."""
+def _drape(ob, colliders, frames=48, bend=6.0, mass=0.4, thick=0.01, ripple=0.0, compression=25.0):
+    """Drop the cloth onto the colliders, freeze the final shape, then give it thickness.
+    ripple > 0 seeds the flat grid with a random up/down wave of that amplitude (m) before the drop, and a low
+    `compression` lets the fabric buckle instead of staying a stiff sheet: that is what leaves folds on a bed."""
     S = bpy.context.scene
+    if ripple > 0:
+        rng = random.Random(len(ob.data.vertices))
+        ph = [rng.uniform(0, 6.28) for _ in range(4)]
+        for v in ob.data.vertices:
+            x, y = v.co.x, v.co.y
+            v.co.z += ripple * (0.6 * math.sin(x * 7.0 + ph[0]) * math.sin(y * 5.0 + ph[1])
+                                + 0.4 * math.sin(x * 17.0 + y * 11.0 + ph[2]) + 0.25 * rng.uniform(-1, 1))
     for c in colliders:
         c.modifiers.new("_col", 'COLLISION')
         c.collision.thickness_outer = 0.004
@@ -182,7 +198,7 @@ def _drape(ob, colliders, frames=48, bend=6.0, mass=0.4, thick=0.01):
     cl = ob.modifiers.new("_cloth", 'CLOTH')
     s = cl.settings
     s.quality = 8; s.mass = mass; s.air_damping = 2.0
-    s.tension_stiffness = 25; s.compression_stiffness = 25; s.shear_stiffness = 10; s.bending_stiffness = bend
+    s.tension_stiffness = 25; s.compression_stiffness = compression; s.shear_stiffness = 10; s.bending_stiffness = bend
     cl.collision_settings.distance_min = 0.004
     cl.point_cache.frame_start = 1; cl.point_cache.frame_end = frames
     f0, f1 = S.frame_start, S.frame_end
@@ -197,6 +213,48 @@ def _drape(ob, colliders, frames=48, bend=6.0, mass=0.4, thick=0.01):
     S.frame_start, S.frame_end = f0, f1
     S.frame_set(f0)
     so = ob.modifiers.new("thick", 'SOLIDIFY'); so.thickness = thick; so.offset = 1.0
+    return ob
+
+
+def _inflate(ob, colliders=(), frames=8, pressure=30.0, sub=2):
+    """Pillow / cushion as a closed cloth bag inflated with pressure and no gravity, pressing on the colliders:
+    edges pinch and the faces dimple like a real filled pillow. The box is subdivided first so it can crease."""
+    S = bpy.context.scene
+    dg = bpy.context.evaluated_depsgraph_get()
+    sd = ob.modifiers.new("_sub", 'SUBSURF'); sd.levels = sd.render_levels = sub
+    dg.update()
+    ob.data = bpy.data.meshes.new_from_object(ob.evaluated_get(dg), preserve_all_data_layers=True, depsgraph=dg)
+    ob.modifiers.clear()
+    for c in colliders:
+        if "_col" not in c.modifiers:
+            c.modifiers.new("_col", 'COLLISION')
+        c.collision.thickness_outer = 0.003
+    cl = ob.modifiers.new("_cloth", 'CLOTH')
+    s = cl.settings
+    # first try (shrink 6%, pressure 3-4, soft tension, colliders it started inside of) deflated the pillows into
+    # crumpled bags and shoved them off the bed: now a taut cover, real pressure, a few frames, no colliders
+    s.quality = 6; s.mass = 0.3; s.air_damping = 5.0
+    # second try (pressure 10-12, bending 0.2) crumpled them like shirts: stiffer cover, higher pressure, so the
+    # pillow stays full and only its seams and corners pinch
+    s.tension_stiffness = 60; s.compression_stiffness = 20; s.shear_stiffness = 20; s.bending_stiffness = 1.5
+    s.use_pressure = True; s.uniform_pressure_force = pressure
+    s.effector_weights.gravity = 0.0
+    cl.collision_settings.use_self_collision = True
+    cl.point_cache.frame_start = 1; cl.point_cache.frame_end = frames
+    f0, f1 = S.frame_start, S.frame_end
+    S.frame_start, S.frame_end = 1, frames
+    for f in range(1, frames + 1):
+        S.frame_set(f)
+    dg = bpy.context.evaluated_depsgraph_get()
+    me = bpy.data.meshes.new_from_object(ob.evaluated_get(dg), preserve_all_data_layers=True, depsgraph=dg)
+    ob.modifiers.clear(); ob.data = me
+    for p in me.polygons:
+        p.use_smooth = True
+    for c in colliders:
+        if "_col" in c.modifiers:
+            c.modifiers.remove(c.modifiers["_col"])
+    S.frame_start, S.frame_end = f0, f1
+    S.frame_set(f0)
     return ob
 
 
@@ -216,7 +274,7 @@ def _placed(mb, name, mats, loc, rot=(0, 0, 0), **kw):
 def bed(K):
     by, hw = BED_Y, BED_W / 2
     fr = MB()                                           # frame: four rails, slats, round tapered legs
-    rz0, rz1 = Z0 + 0.13, Z0 + 0.30
+    rz0, rz1 = Z0 + 0.13, MATT_Z0 + 0.05        # rails reach the library mattress bottom: no slats show (photo 5)
     fr.box(FX - 0.03, HX, by - hw - 0.03, by - hw, rz0, rz1)
     fr.box(FX - 0.03, HX, by + hw, by + hw + 0.03, rz0, rz1)
     fr.box(FX - 0.03, FX, by - hw, by + hw, rz0, rz1)
@@ -228,50 +286,76 @@ def bed(K):
         for ly in (by - hw + 0.03, by + hw - 0.03):
             fr.cylinder(lx, ly, Z0, rz0, 0.026, 0.034, seg=20)          # chunky round tapered legs
     frame = fr.build("Cama_Base", [K['oak']], bevel=0.004)
-    hb = MB(); hb.rbox(HX + 0.01, HX + 0.07, by - hw - 0.04, by + hw + 0.04, Z0 + 0.32, Z0 + 1.08, r=0.025, puff=0.15)
-    hb.build("Cama_Cabecero", [K['head']], smooth=True)
+    hb = MB(); hb.rbox(HX + 0.01, HX + 0.07, by - hw - 0.075, by + hw + 0.075, Z0 + 0.32, Z0 + 1.08, r=0.025, puff=0.15)
+    hb_ob = hb.build("Cama_Cabecero", [K['head']], smooth=True)
     mt = MB(); mt.rbox(FX + 0.01, HX - 0.02, by - hw + 0.01, by + hw - 0.01, MATT_Z0, MATT_Z1, r=0.06, puff=0.12)
     matt = mt.build("Cama_Colchon", [K['sheet']], smooth=True)
 
+    tz = MATT_Z1 + 0.06
+    if CON_BIBLIO:
+        return _towel_bow(K, FX + 0.55, by, tz)       # biblioteca._towel re-seats it on the library runner
     # pillows leaning on the headboard, then the blue cushions in front of them
     pil = []
     for dy in (-0.33, 0.33):
         p = MB(); p.rbox(-0.08, 0.08, -0.33, 0.33, -0.23, 0.23, r=0.07, puff=0.6)
         pil.append(_placed(p, "Cama_Almohada", [K['pillow']], (HX - 0.17, by + dy, MATT_Z1 + 0.2),
                            (0, math.radians(18), 0), smooth=True))     # top leans back onto the headboard
+    cush = []
     for dy, yaw in ((-0.2, 8), (0.2, -10)):       # square 45 cm cushions with crisp piped edges (photo 5)
         c = MB(); c.rbox(-0.06, 0.06, -0.22, 0.22, -0.22, 0.22, r=0.025, puff=0.45)
-        _placed(c, "Cama_Cojin", [K['cushion']], (HX - 0.36, by + dy, MATT_Z1 + 0.19),
-                (0, math.radians(24), math.radians(yaw)), smooth=True)
+        cush.append(_placed(c, "Cama_Cojin", [K['cushion']], (HX - 0.36, by + dy, MATT_Z1 + 0.19),
+                            (0, math.radians(24), math.radians(yaw)), smooth=True))
+    # filled-bag pillows pressing on the headboard and mattress (the rigid boxes read as foam blocks)
+    for p in pil:
+        _inflate(p)
+    for c in cush:
+        _inflate(c, pressure=25.0)
 
     # quilt from the foot to just below the pillows, hanging ~30 cm over the sides and foot
     # overhang ~18 cm: it covers the mattress side and stops on the oak rail, which stays visible (photo 5)
-    quilt = _grid("Cama_Colcha", FX - 0.14, HX - 0.52, by - hw - 0.15, by + hw + 0.15, MATT_Z1 + 0.05, 0.022, K['quilt'])
-    _drape(quilt, [matt, frame], bend=12.0, mass=0.5)
+    # soft, low-compression cloth dropped with a seeded ripple: settles with folds instead of a flat board
+    quilt = _grid("Cama_Colcha", FX - 0.14, HX - 0.52, by - hw - 0.15, by + hw + 0.15, MATT_Z1 + 0.08, 0.02, K['quilt'])
+    _drape(quilt, [matt, frame], frames=70, bend=1.5, mass=0.5, ripple=0.03, compression=4.0)
     # runner across the foot third, draped over the quilt
     rx = FX + 0.55
-    runner = _grid("Cama_Camino", rx - 0.26, rx + 0.26, by - hw - 0.3, by + hw + 0.3, MATT_Z1 + 0.12, 0.02, K['runner'],
+    runner = _grid("Cama_Camino", rx - 0.26, rx + 0.26, by - hw - 0.3, by + hw + 0.3, MATT_Z1 + 0.15, 0.02, K['runner'],
                    tile=(0.26, 0.6))              # straight repeat of the photographed print, ~25 cm palms
-    _drape(runner, [quilt, matt, frame], bend=2.0, mass=0.2, thick=0.004)
+    _drape(runner, [quilt, matt, frame], frames=60, bend=0.6, mass=0.2, thick=0.004, ripple=0.015, compression=3.0)
 
-    # towel "swan" (photos 1 and 5): a roll lying across the bed with a pleated fan spreading from one end
-    tz = _top_z(runner, rx, by)
+    # towel "bow" (photos 1 and 5): a rolled towel lying lengthwise on the middle of a second towel, which is
+    # gathered under it and fans out to both sides in pleated wings (photo 5: big fan toward the window side)
+    _towel_bow(K, rx, by, _top_z(runner, rx, by))
+
+
+def _towel_bow(K, rx, by, tz):
     tw = MB()
-    r0 = 0.05
-    tw.tube((rx + 0.02, by - 0.22, tz + r0), (rx + 0.02, by + 0.05, tz + r0), r0, r0, seg=20)
-    for e in (by - 0.22, by + 0.05):
-        tw.sphere((rx + 0.02, e, tz + r0), r0, seg=20, rings=8)
-    n, R, a0, a1 = 9, 0.30, math.radians(-70), math.radians(70)            # fan: alternating ridge / valley pleats
-    cx, cy = rx + 0.02, by + 0.06
-    for i in range(n):
-        ta, tm, tb = (a0 + (a1 - a0) * f for f in (i / n, (i + 0.5) / n, (i + 1) / n))
-        h = 0.035 if i % 2 else 0.012
-        p_a = (cx - R * math.sin(ta) * 0.6, cy + R * math.cos(ta), tz + 0.012)
-        p_m = (cx - R * math.sin(tm) * 0.6, cy + R * math.cos(tm), tz + h)
-        p_b = (cx - R * math.sin(tb) * 0.6, cy + R * math.cos(tb), tz + 0.012)
-        hub = (cx, cy, tz + 0.03)
-        tw._add([hub, p_a, p_m, p_b], [(0, 1, 2), (0, 2, 3), (0, 2, 1), (0, 3, 2)], 0)   # both sides
-    tw.build("Cama_Toalla", [K['towel']], smooth=True)
+
+    def sheet(P, nu, nv):                              # open quad grid surface from P(i, j)
+        vs = [P(i, j) for i in range(nu + 1) for j in range(nv + 1)]
+        fs = [(i * (nv + 1) + j, (i + 1) * (nv + 1) + j, (i + 1) * (nv + 1) + j + 1, i * (nv + 1) + j + 1)
+              for i in range(nu) for j in range(nv)]
+        tw._add(vs, fs, 0)
+
+    cx = rx + 0.03
+    for side, R, a, npl in ((-1, 0.30, math.radians(38), 4), (1, 0.22, math.radians(28), 3)):   # -y: right in photo 5
+        def wing(i, j, side=side, R=R, a=a, npl=npl):
+            s = 0.12 + 0.88 * i / 14
+            ph = -a + 2 * a * j / 48
+            lift = 0.05 * (1 - s) ** 2                 # gathered up into the roll at the centre
+            pleat = 0.025 * s * 0.5 * (1 - math.cos(2 * math.pi * npl * (ph + a) / (2 * a)))
+            return (cx + R * s * math.sin(ph), by + side * R * s * math.cos(ph), tz + 0.005 + lift + pleat)
+        sheet(wing, 14, 48)
+    # the roll: a real spiral (4 turns) so its ends show the rolled layers, as in the photo
+    L, x0, zc, turns = 0.32, rx - 0.13, tz + 0.085, 4
+
+    def roll(i, j):
+        t = i / 10
+        th = 2 * math.pi * turns * j / (36 * turns)
+        r = 0.012 + 0.043 * j / (36 * turns)
+        return (x0 + L * t, by + r * math.cos(th), zc + 0.03 * t + r * math.sin(th))
+    sheet(roll, 10, 36 * turns)
+    tob = tw.build("Cama_Toalla", [K['towel']], smooth=True)
+    so = tob.modifiers.new("grosor", 'SOLIDIFY'); so.thickness = 0.012; so.offset = 0.0          # terry: thick, soft edges
 
 
 def _wall_image(name, mat, y0, y1, z0, z1, x):
@@ -302,7 +386,8 @@ def bedside(K):
     black-framed prints above the bed are the listing's own photos (flower in a white mat, sunset, city)."""
     _remove("Nightstand", "Desk_Lamp", "Prints", "Prop_potted_plant_04", "Prop_desk_lamp_arm_01", "Shelf_Plant")
     by = BED_Y
-    nx, ny, w, d, h = W - 0.24, by - 1.2, 0.42, 0.40, 0.52
+    # beside the bed rail (photo 1, remoto/siluetas.py: was 27 cm too far toward the door once BED_Y moved)
+    nx, ny, w, d, h = W - 0.32, by - BED_W / 2 - 0.245, 0.42, 0.40, 0.52   # remoto/siluetas.py: IoU 0.67 -> 0.96
     x0, x1, y0, y1 = nx - d / 2, nx + d / 2, ny - w / 2, ny + w / 2
     ns = MB(); t = 0.016
     ns.box(x0, x1, y0, y1, Z0 + h - 0.02, Z0 + h, 1)                              # grey top
@@ -315,8 +400,36 @@ def bedside(K):
     ns.box(x0 - 0.012, x0, ny - 0.07, ny + 0.07, Z0 + h - 0.095, Z0 + h - 0.085, 2)              # bar handle
     ns.box(x0 + 0.03, x1 - 0.03, y0 + 0.02, y1 - 0.02, Z0, Z0 + 0.04, 0)          # recessed plinth
     ns.build("Mesa_Noche", [K['white'], K['grey_top'], K['steel']], bevel=0.002)
+    # grey ribbed place mat over most of the top (photo 1): 4 mm pad, ribs every 12 mm running front to back
+    mt = 0.004
+    mx0, mx1, my0, my1 = x0 + 0.025, x1 - 0.015, y0 + 0.02, y1 - 0.02
+    mm = MB(); mm.box(mx0, mx1, my0, my1, Z0 + h, Z0 + h + mt * 0.6, 0)
+    ny_r = int((my1 - my0) / 0.012)
+    for i in range(ny_r):
+        yc = my0 + (i + 0.5) * (my1 - my0) / ny_r
+        mm.box(mx0, mx1, yc - 0.0035, yc + 0.0035, Z0 + h + mt * 0.6, Z0 + h + mt, 0)
+    mm.build("Mesa_Individual", [_m.fabric("Individual_Gris", (0.36, 0.37, 0.37, 1), weave=200.0, bump=0.4, sheen=0.2)],
+             bevel=0.001)
+    # small boxwood-like plant in a satin gold pot at the front corner (photo 1)
+    px_, py_, pz = nx - 0.085, ny - 0.05, Z0 + h + mt
+    pt = MB()
+    pt.cylinder(px_, py_, pz, pz + 0.075, 0.042, 0.05, seg=28, mi=0)
+    pt.cylinder(px_, py_, pz + 0.068, pz + 0.07, 0.046, 0.046, seg=28, mi=1)                  # soil
+    rnd = random.Random(11)
+    for i in range(70):
+        a = rnd.uniform(0, 2 * math.pi); el = rnd.uniform(math.radians(15), math.radians(85))
+        L = rnd.uniform(0.07, 0.12)
+        base = (px_ + 0.01 * math.cos(a), py_ + 0.01 * math.sin(a), pz + 0.07)
+        tip = (px_ + L * math.cos(el) * math.cos(a), py_ + L * math.cos(el) * math.sin(a), pz + 0.07 + L * math.sin(el))
+        pt.tube(base, tip, 0.0015, 0.001, seg=4, mi=2)
+        for k in range(3):
+            t = 0.45 + 0.27 * k + rnd.uniform(-0.05, 0.05)
+            c = tuple(b + (q - b) * t + rnd.uniform(-0.008, 0.008) for b, q in zip(base, tip))
+            pt.sphere(c, rnd.uniform(0.011, 0.016), seg=8, rings=5, mi=2, squash=0.45)
+    pt.build("Mesa_Planta", [_m.new_mat("Maceta_Dorada", (0.66, 0.53, 0.30, 1), rough=0.35, metal=0.6),
+                             _m.new_mat("Tierra", (0.06, 0.045, 0.03, 1), rough=0.95), K['leaf']], smooth=True)
     lp = MB()                                                                     # gooseneck lamp
-    bx, byy, bz = nx + 0.04, ny + 0.05, Z0 + h
+    bx, byy, bz = nx + 0.04, ny + 0.05, Z0 + h + mt
     lp.cylinder(bx, byy, bz, bz + 0.02, 0.06, 0.055, seg=32)
     pts = [(bx, byy, bz + 0.02)]
     for i in range(1, 15):              # gooseneck: rises, then arcs over toward the bed so the head faces down
@@ -336,7 +449,6 @@ def bedside(K):
     pl = MB()                                            # small pot with trailing heart-shaped leaves (monstera adansonii)
     px_, py_ = W - 0.09, by + 1.0
     pl.cylinder(px_, py_, sz, sz + 0.09, 0.045, 0.055, seg=20, mi=0)
-    import random
     rnd = random.Random(7)
     for i in range(16):
         a = rnd.uniform(0, 2 * math.pi); L = rnd.uniform(0.08, 0.30); droop = rnd.uniform(0.0, 0.25)
@@ -366,7 +478,9 @@ def rug(K):
     ob = bpy.data.objects.get("Rug")
     if ob is not None:
         bpy.data.objects.remove(ob)
-    x0, x1, y0, y1 = W - 1.75, W - 0.55, BED_Y - 1.40, BED_Y - 0.80             # 120 x 60 cm
+    # measured on photo 1 (remoto/medir_foto01.py, 59 cm tile scale): ~68 x 44 cm, fringed ends along X, far edge at the bed rail
+    side = BED_Y - BED_W / 2                     # room-side rail: the rug's far edge sits 3 cm short of it (silhouettes)
+    x0, x1, y0, y1 = W - 1.42, W - 0.74, side - 0.47, side - 0.03
     g = _grid("Tapete", x0, x1, y0, y1, Z0 + 0.008, 0.05, K['rug'])
     g.modifiers.new("thick", 'SOLIDIFY').thickness = 0.008
     fr = MB()
@@ -378,6 +492,9 @@ def rug(K):
     fr.build("Tapete_Flecos", [K['jute']])
 
 
+SOFA_FONDO = 1.40          # m from the west wall to the front of the pulled-out sofa bed (photo 1, sofa_caja.py)
+
+
 def sofa_bed(K):
     """Sofa bed on the west wall (photo 1): low brown upholstered futon with short arms, a patterned bolster along the
     top of the back, two big dark olive pillows and a beige blanket over the seat hanging down the front."""
@@ -385,8 +502,16 @@ def sofa_bed(K):
     cy, L = 5.72, 1.95
     y0, y1 = cy - L / 2, cy + L / 2
     so = MB()
+    # Photo 1: the sofa bed is pulled out.  remoto/sofa_caja.py (silhouette, box model): depth 1.43 m against the
+    # 0.92 m of the closed futon (IoU 0.75 -> 0.93; the photo pins it to about +-10 cm), seat top ~0.34-0.42 m.
+    # The arms stay 0.92 m deep; the pulled-out section runs between them.
+    D = SOFA_FONDO
     so.rbox(0.02, 0.92, y0, y1, Z0 + 0.08, Z0 + 0.30, r=0.03, mi=0)                  # base
+    so.rbox(0.90, D, y0 + 0.12, y1 - 0.12, Z0 + 0.08, Z0 + 0.28, r=0.03, mi=0)       # pulled-out frame
     so.rbox(0.10, 0.92, y0 + 0.12, y1 - 0.12, Z0 + 0.30, Z0 + 0.42, r=0.05, puff=0.3, mi=0)   # seat mattress
+    so.rbox(0.90, D, y0 + 0.13, y1 - 0.13, Z0 + 0.28, Z0 + 0.40, r=0.05, puff=0.3, mi=0)      # its second half
+    for y in (y0 + 0.2, y1 - 0.2):
+        so.cylinder(D - 0.06, y, Z0, Z0 + 0.08, 0.02, seg=10, mi=1)
     so.rbox(0.02, 0.24, y0 + 0.12, y1 - 0.12, Z0 + 0.30, Z0 + 0.72, r=0.05, puff=0.3, mi=0)   # back
     for a, b in ((y0, y0 + 0.12), (y1 - 0.12, y1)):
         so.rbox(0.02, 0.92, a, b, Z0 + 0.08, Z0 + 0.56, r=0.04, mi=0)                # low arms
@@ -394,16 +519,117 @@ def sofa_bed(K):
         for y in (y0 + 0.06, y1 - 0.06):
             so.cylinder(x, y, Z0, Z0 + 0.08, 0.02, seg=10, mi=1)
     sofa = so.build("Sofa_Cama", [K['sofa'], K['black']], smooth=True)
-    bo = MB(); bo.rbox(0.03, 0.22, y0 + 0.14, y1 - 0.14, Z0 + 0.72, Z0 + 0.84, r=0.05, puff=0.5)
+    # photo 1: the print covers the upper ~25 cm of the back along its whole length (it was a 12 cm roll on top)
+    bo = MB(); bo.rbox(0.03, 0.27, y0 + 0.13, y1 - 0.13, Z0 + 0.60, Z0 + 0.86, r=0.05, puff=0.4)
     bo.build("Sofa_Cojin_Estampado", [K['bolster']], smooth=True)
-    for dy, yaw in ((-0.42, 5), (0.30, -7)):
+    for dy, yaw in (() if CON_BIBLIO else ((-0.42, 5), (0.30, -7))):     # the library brings its own (SOFA_QUITAR)
         c = MB(); c.rbox(-0.08, 0.08, -0.30, 0.30, -0.26, 0.26, r=0.08, puff=0.7)
-        _placed(c, "Sofa_Almohadon", [K['olive']], (0.36, cy + dy, Z0 + 0.66), (0, math.radians(-22), math.radians(yaw)),
-                smooth=True)
+        pc = _placed(c, "Sofa_Almohadon", [K['olive']], (0.36, cy + dy, Z0 + 0.66),
+                     (0, math.radians(-22), math.radians(yaw)), smooth=True)
+        _inflate(pc, pressure=25.0)                       # filled bag: pinched edges, soft dimples
     # blanket: shaped directly (the cloth solver let it fall through the sofa): flat over the seat, rolling over the
     # front edge, hanging in soft folds to just above the floor
-    _hang_sheet("Sofa_Manta", K['throw'], x_back=0.28, x_edge=0.92, z_top=Z0 + 0.435, z_bottom=Z0 + 0.06,
-                y0=y0 + 0.22, y1=y1 - 0.3)
+    # photo 1: the blanket lies on the pulled-out half (a strip of brown seat shows behind it) and hangs at the front
+    if os.environ.get("MANTA", "tela") == "rigida":
+        _hang_sheet("Sofa_Manta", K['throw'], x_back=0.66, x_edge=D, z_top=Z0 + 0.415, z_bottom=Z0 + 0.05,
+                    y0=y0 + 0.16, y1=y1 - 0.15)
+    else:
+        _throw_cloth("Sofa_Manta", K['throw'], D, y0, y1)
+
+
+def _throw_cloth(name, mat, D, y0, y1, step=0.025):
+    """Blanket dropped by the cloth solver onto proxy boxes of the sofa (seat, pulled-out half, arms, back) and the
+    floor.  The shaped sheet (_hang_sheet) read as a rigid board: straight hem, no sag (2026-11-13, photo 1).
+    Photo 1: it lies on the pulled-out half, hangs at the front in soft waves to just above the floor, and its corner
+    on the door side hangs past the side of the pulled-out frame.  A small yaw gives that corner its overhang.
+    Proxies instead of Sofa_Cama itself: the cloth fell through the rounded, overlapping boxes of the real mesh."""
+    W_, L_ = 1.20, 1.55                                 # across (x) and along the sofa (y), m
+    PIN_U = 0.42                                        # back strip held on the seat (friction of a real blanket)
+    xa, ya = 0.60, y0 + 0.13                            # back corner on the door side
+    yaw = math.radians(-8)                              # front edge swings toward the door side
+    nx, ny = round(W_ / step), round(L_ / step)
+    rng = random.Random(1311)
+    ph = [rng.uniform(0, 6.28) for _ in range(4)]
+    vs = []
+    for j in range(ny + 1):
+        for i in range(nx + 1):
+            u, v = W_ * i / nx, L_ * j / ny
+            x = xa + u * math.cos(yaw) - v * math.sin(yaw)
+            y = ya + u * math.sin(yaw) + v * math.cos(yaw)
+            # starts resting on the seat (top + collision gap); the back strip is PINNED there (v1, 2026-11-13: free,
+            # the whole sheet slid off the front in 90 frames and ended as a wad on the floor)
+            z = Z0 + (0.42 if x < 0.90 else 0.40) + 0.015
+            # seed ripple on the free part: without it the solver hangs a perfectly symmetric single flat panel
+            if u > PIN_U:
+                z += 0.010 * math.sin(u * 9 + ph[0]) * math.sin(v * 6 + ph[1]) + 0.005 * math.sin(v * 17 + ph[2])
+            vs.append((x, y, z))
+    fs = [(j * (nx + 1) + i, j * (nx + 1) + i + 1, (j + 1) * (nx + 1) + i + 1, (j + 1) * (nx + 1) + i)
+          for j in range(ny) for i in range(nx)]
+    me = bpy.data.meshes.new(name); me.from_pydata(vs, [], fs)
+    uv = me.uv_layers.new(name="UVMap")
+    for loop in me.loops:
+        k = loop.vertex_index
+        uv.data[loop.index].uv = ((k % (nx + 1)) / nx * W_, (k // (nx + 1)) / ny * L_)
+    for p in me.polygons:
+        p.use_smooth = True
+    me.materials.append(mat)
+    ob = bpy.data.objects.new(name, me)
+    bpy.data.collections["House"].objects.link(ob)
+    vg = ob.vertex_groups.new(name="pin")
+    vg.add([k for k in range(len(vs)) if (k % (nx + 1)) / nx * W_ < PIN_U], 1.0, 'REPLACE')
+    # proxies (same numbers as sofa_bed): pulled-out half, seat mattress, arms, back, floor
+    boxes = [(0.88, D, y0 + 0.12, y1 - 0.12, Z0, Z0 + 0.40), (0.10, 0.92, y0 + 0.12, y1 - 0.12, Z0, Z0 + 0.42),
+             (0.02, 0.92, y0, y0 + 0.12, Z0, Z0 + 0.56), (0.02, 0.92, y1 - 0.12, y1, Z0, Z0 + 0.56),
+             (0.02, 0.24, y0, y1, Z0, Z0 + 0.86), (-1.0, 4.0, y0 - 2.0, y1 + 2.0, Z0 - 0.2, Z0)]
+    prox = []
+    for k, (a, b, c, d, e, f) in enumerate(boxes):
+        bm = bpy.data.meshes.new(f"_px{k}")
+        bm.from_pydata([(a, c, e), (b, c, e), (b, d, e), (a, d, e), (a, c, f), (b, c, f), (b, d, f), (a, d, f)], [],
+                       [(0, 3, 2, 1), (4, 5, 6, 7), (0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)])
+        po = bpy.data.objects.new(f"_px{k}", bm); bpy.data.collections["House"].objects.link(po)
+        po.modifiers.new("_col", 'COLLISION')
+        po.collision.thickness_outer = 0.008; po.collision.cloth_friction = 12.0
+        prox.append(po)
+    S = bpy.context.scene
+    cl = ob.modifiers.new("_cloth", 'CLOTH')
+    s = cl.settings
+    # soft fleece: low bending so it waves, low compression so the hang buckles into folds instead of a stiff panel
+    s.quality = 12; s.mass = 0.35; s.air_damping = 1.5
+    s.vertex_group_mass = "pin"; s.pin_stiffness = 1.0
+    s.tension_stiffness = 15; s.compression_stiffness = 4; s.shear_stiffness = 5; s.bending_stiffness = 0.6
+    cl.collision_settings.collision_quality = 4; cl.collision_settings.distance_min = 0.006
+    frames = 90
+    cl.point_cache.frame_start = 1; cl.point_cache.frame_end = frames
+    f0, f1 = S.frame_start, S.frame_end
+    S.frame_start, S.frame_end = 1, frames
+    for f in range(1, frames + 1):
+        S.frame_set(f)
+    dg = bpy.context.evaluated_depsgraph_get()
+    me2 = bpy.data.meshes.new_from_object(ob.evaluated_get(dg), preserve_all_data_layers=True, depsgraph=dg)
+    ob.modifiers.clear(); ob.data = me2
+    S.frame_start, S.frame_end = f0, f1
+    S.frame_set(f0)
+    for po in prox:
+        bpy.data.objects.remove(po, do_unlink=True)
+    # second face 6 mm under, reversed (closed-looking blanket; the solidify shell rendered black in the engine)
+    co = [v.co.copy() for v in me2.vertices]
+    nr = [v.normal.copy() for v in me2.vertices]
+    faces = [tuple(p.vertices) for p in me2.polygons]
+    vs2 = [tuple(c) for c in co] + [tuple(c - n * 0.006) for c, n in zip(co, nr)]
+    off = len(co)
+    fs2 = faces + [tuple(off + k for k in reversed(f)) for f in faces]
+    me3 = bpy.data.meshes.new(name); me3.from_pydata(vs2, [], fs2); me3.validate()
+    uv3 = me3.uv_layers.new(name="UVMap")
+    for loop in me3.loops:
+        k = loop.vertex_index % off
+        uv3.data[loop.index].uv = ((k % (nx + 1)) / nx * W_, (k // (nx + 1)) / ny * L_)
+    for p in me3.polygons:
+        p.use_smooth = True
+    me3.materials.append(mat)
+    ob.data = me3
+    zmin = min(v[2] for v in vs2[:off])
+    print(f"[muebles] manta tela: {off} vértices, borde más bajo a {zmin - Z0:.3f} m del piso")
+    return ob
 
 
 def _hang_sheet(name, mat, x_back, x_edge, z_top, z_bottom, y0, y1, r=0.05, step=0.02, fold=0.012):
@@ -567,12 +793,7 @@ def build(M):
         ob = bpy.data.objects.get(n)
         if ob is not None:
             bpy.data.objects.remove(ob)
-    K = _mats(M)
-    bed(K)
-    bedside(K)
-    rug(K)
-    sofa_bed(K)
-    balcony(K)
-    side_desk(K)
-    office_chair(K)
-    ac_details(K)
+    import time
+    t = time.time(); K = _mats(M); print(f"[muebles] materiales {time.time() - t:5.1f}s")
+    for f in (bed, bedside, rug, sofa_bed, balcony, side_desk, office_chair, ac_details):   # perfil: 50 de los 59 s del
+        t = time.time(); f(K); print(f"[muebles] {f.__name__:12s} {time.time() - t:5.1f}s")    # armado estaban aquí

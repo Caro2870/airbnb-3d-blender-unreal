@@ -45,13 +45,15 @@ def _plane(name, mat, p0, du, dv, tile):
 def _mats(M):
     return dict(
         white=_m.new_mat("Cocina_Blanco", (0.84, 0.84, 0.82, 1), rough=0.3),
-        yellow=M['amarillo'], quartz=_m.new_mat("Cuarzo_Gris", (0.22, 0.22, 0.21, 1), rough=0.3),
+        # countertop and splashback follow the finish package when one is chosen (house.paquete)
+        yellow=M['amarillo'], quartz=M.get('cuarzo') or _m.new_mat("Cuarzo_Gris", (0.22, 0.22, 0.21, 1), rough=0.3),
         # brushed stainless: darker base + some roughness, or under overcast light it reflects the white walls and
         # reads as white plastic (audit 2: fridge, hood, sink)
         steel=_m.new_mat("Inox_Cepillado", (0.42, 0.42, 0.42, 1), rough=0.28, metal=1.0), black=M['black'],
         sky=_m.new_mat("Ventana_Cielo", (0.9, 0.92, 0.95, 1), rough=0.1, emit=(0.85, 0.9, 1.0, 1), emit_str=2.0),
         cast=_m.new_mat("Hierro_Fundido", (0.02, 0.02, 0.02, 1), rough=0.6),
-        splash=_image_mat("Salpicadero_3D_Foto", os.path.join(GEN, "salpicadero.jpg"), rough=0.6, sheen=0.0),
+        splash=M.get('salpicadero_pkg') or _image_mat("Salpicadero_3D_Foto", os.path.join(GEN, "salpicadero.jpg"),
+                                                      rough=0.6, sheen=0.0),
         shower_tile=_image_mat("Ducha_Triangulos", os.path.join(GEN, "ducha_triangulos.jpg"), rough=0.3, sheen=0.0),
         bath_grey=_m.tiles("Bano_Gris_30x60", (0.40, 0.40, 0.38, 1), grout=(0.47, 0.47, 0.45, 1), size=(0.6, 0.3),
                            gap=0.002, rough=0.35, variation=0.05, mottle=0.3, bump=0.1, plane='YZ'),

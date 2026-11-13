@@ -1,6 +1,7 @@
 """Interior: floor finish, kitchen, bathroom, laundry/fridge nook, bedroom-living staging, lights.
 Fixtures (kitchen, bath, appliances) follow the photos; loose furniture and decor are staging read from the photos."""
 import math
+import os
 from .plan import *
 from archviz.mesh import *
 from archviz.lights import *
@@ -149,5 +150,8 @@ def lights(M):
     pts = [(1.5, 5.8), (2.0, 3.3), (1.2, 1.2), (3.4, 1.9), (3.4, 0.6), (2.24, 0.55)]
     dl = MB(); downlights(dl, pts, ZC - 0.025, mi=0); dl.build("Downlights", [M['emit_down']])
     for (x, y) in pts:
-        add_light(f"L_Down_{x:.1f}_{y:.1f}", 'SPOT', (x, y, ZC - 0.06), 14, size=0.05)
+        # FOCO_ANG: cone of the recessed downlights (deg).  Was 80 (archviz default); real recessed downlights are
+        # 36-60 deg and leave warm pools on the floor, not on the walls (photo 1: warm floor, neutral walls)
+        add_light(f"L_Down_{x:.1f}_{y:.1f}", 'SPOT', (x, y, ZC - 0.06), 14, size=0.05,
+                  spot=math.radians(float(os.environ.get("FOCO_ANG", "80"))), blend=0.35)
     room_light("L_Bath", 'bath', energy=8)       # the bath has no daylight beyond its small frosted window

@@ -12,8 +12,8 @@ def build(M):
     w.wall('Y', -WT, Y_BAL, -WT, 0.0, Z0, ZC)                                                             # left
     w.wall('Y', -WT, Y_WIN + WT, W, W + WT, Z0, ZC)        # right: stops at the window; the balcony's east end is open (photo 2)
     # window wall: short returns either side of the full-height glazing + a header
-    w.wall('X', 0.0, W, Y_WIN, Y_WIN + WT, Z0, ZC, holes=[(0.15, W - 0.15, Z0, Z0 + 2.4)])
-    # ---- partitions (floor plan)
+    w.wall('X', 0.0, W, Y_WIN, Y_WIN + WT, Z0, ZC, holes=[(WIN_X[0], WIN_X[1], Z0, Z0 + 2.4)])
+    # ---- partitions (architect's plan)
     bx0, bx1, by0, by1 = BATH
     w.wall('Y', 0.0, by1 + PT, bx0 - PT, bx0, Z0, ZC)                                                     # laundry/closet | bath
     w.wall('X', bx0 - PT, W, by1, by1 + PT, Z0, ZC, holes=[(BATH_DOOR[0], BATH_DOOR[1], Z0, Z0 + 2.1)])   # bath | alcoba
@@ -38,16 +38,18 @@ def build(M):
     # ---- window wall: fixed panes either side of the open sliding leaf; the leaf is parked behind the right pane
     g = MB()
     yg = Y_WIN + 0.05
-    glass_wall(g, 0.15, WIN_OPEN[0], yg, yg + T, Z0, Z0 + 2.4, frame_w=0.05)
-    glass_wall(g, WIN_OPEN[1], W - 0.15, yg, yg + T, Z0, Z0 + 2.4, frame_w=0.05)
-    glass_wall(g, WIN_OPEN[1] - 0.05, W - 0.2, yg + 0.06, yg + 0.06 + T, Z0, Z0 + 2.4, frame_w=0.05)
-    g.box(0.15, W - 0.15, yg - 0.04, yg + 0.1, Z0, Z0 + 0.03, 1)                     # track
-    g.box(0.15, W - 0.15, yg - 0.04, yg + 0.1, Z0 + 2.37, Z0 + 2.4, 1)               # head
+    x0, x1 = WIN_X
+    glass_wall(g, x0, WIN_OPEN[0], yg, yg + T, Z0, Z0 + 2.4, frame_w=0.05)                 # fixed left leaf
+    glass_wall(g, x0 + 0.05, WIN_OPEN[0] + 0.05, yg + 0.06, yg + 0.06 + T, Z0, Z0 + 2.4, frame_w=0.05)   # parked leaf
+    g.box(x0, x1, yg - 0.04, yg + 0.1, Z0, Z0 + 0.03, 1)                                   # track
+    g.box(x0, x1, yg - 0.04, yg + 0.1, Z0 + 2.37, Z0 + 2.4, 1)                             # head
+    g.box(x1 - 0.05, x1, yg - 0.04, yg + 0.1, Z0, Z0 + 2.4, 1)                             # jamb on the open side
     g.build("Glazing", [M['glass'], M['frame']])
     # roller blind, half lowered as in photo 1
     rb = MB()
-    rb.box(0.15, W - 0.15, Y_WIN - 0.12, Y_WIN - 0.02, ZC - 0.14, ZC - 0.02)          # cassette
-    rb.box(0.2, W - 0.2, Y_WIN - 0.08, Y_WIN - 0.07, Z0 + 1.85, ZC - 0.14)            # fabric
+    # photo 1 (measured): blind 0.67-3.46 wide, bottom ~1.77 m above the floor
+    rb.box(WIN_X[0] - 0.19, WIN_X[1] + 0.13, Y_WIN - 0.12, Y_WIN - 0.02, ZC - 0.14, ZC - 0.02)   # cassette
+    rb.box(WIN_X[0] - 0.16, WIN_X[1] + 0.10, Y_WIN - 0.08, Y_WIN - 0.07, Z0 + 2.0, ZC - 0.14)   # fabric
     rb.build("Roller_Blind", [M['cortina']])
 
     # ---- doors: entry (closed), bathroom (open against the bath wall), laundry doorway left open

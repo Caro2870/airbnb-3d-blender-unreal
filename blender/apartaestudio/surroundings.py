@@ -49,16 +49,32 @@ def build(M):
         for y0 in (Y_WIN - 6.2, Y_WIN - 3.0):
             s.box(WX - 1.1, WX, y0, y0 + 2.6, z - 0.22, z)
             glass_rail(r, [(WX, y0), (WX - 1.1, y0), (WX - 1.1, y0 + 2.6), (WX, y0 + 2.6)], z, h=1.05)
-    # grey multi-storey parking deck across the drive to the north-east (photos 2-3): open floors on columns
+    # grey multi-storey parking deck across the drive to the north-east (photo 2): two storeys + roof deck, solid
+    # spandrels and lintels with long horizontal openings between piers every 6 m, parapet on the roof
     pd = MB()
     px0, px1, py0, py1 = W + 5.0, W + 34.0, Y_BAL + 9.0, Y_BAL + 24.0
-    for zf in (0.0, 2.6):                                                        # two low decks: the sea shows above
-        pd.box(px0, px1, py0, py1, zf, zf + 0.3)
-        pd.box(px0, px1, py0 - 0.05, py0 + 0.15, zf + 0.3, zf + 1.0)             # parapet facing the unit
-    for x in range(int(px0), int(px1) + 1, 6):
-        for y in (py0 + 0.3, py1 - 0.3):
-            pd.box(x - 0.25, x + 0.25, y - 0.25, y + 0.25, 0.0, 2.6)
-    pd.build("Parqueadero", [M['concrete']], coll='Site')
+    LV = 3.0                                                                     # storey height of the deck
+    for k in range(3):                                                           # slabs: ground, first, roof
+        z = k * LV
+        pd.box(px0, px1, py0, py1, z, z + 0.3)
+    pd.box(px0, px1, py0, py0 + 0.2, 2 * LV + 0.3, 2 * LV + 1.2)                 # roof parapet facing the unit
+    pd.box(px0, px0 + 0.2, py0, py1, 2 * LV + 0.3, 2 * LV + 1.2)
+    for k in range(2):                                                           # each storey's facades
+        z = k * LV + 0.3
+        for (a0, a1, b0, b1) in ((px0, px1, py0, py0 + 0.25), (px0, px0 + 0.25, py0, py1)):
+            pd.box(a0, a1, b0, b1, z, z + 0.95)                                  # spandrel (car barrier)
+            pd.box(a0, a1, b0, b1, z + 2.25, z + LV - 0.3)                       # lintel / slab edge band
+    for x in range(int(px0), int(px1) + 1, 6):                                   # piers on the long facade
+        pd.box(x - 0.3, x + 0.3, py0, py0 + 0.45, 0.0, 2 * LV + 0.3)
+    for y in range(int(py0), int(py1) + 1, 6):                                   # piers on the short facade
+        pd.box(px0, px0 + 0.45, y - 0.3, y + 0.3, 0.0, 2 * LV + 0.3)
+    for x in range(int(px0) + 6, int(px1), 6):                                   # interior columns (shadowed)
+        for y in (py0 + 5.0, py0 + 10.0):
+            pd.box(x - 0.25, x + 0.25, y - 0.25, y + 0.25, 0.0, 2 * LV)
+    from archviz import materials as _mc
+    gris = _mc.new_mat("Concreto_Parqueo", (0.40, 0.40, 0.38, 1), rough=0.9)   # photo 2: weathered grey, not white
+    _weather(gris)
+    pd.build("Parqueadero", [gris], coll='Site')
     s.build("Block_Balconies", [M['fachada']], coll='Site')
     r.build("Block_Rails", [M['glass'], M['frame']], coll='Site')
     # ground, street, parking, low buildings, sea
@@ -67,7 +83,7 @@ def build(M):
     from archviz import materials as _mm
     pavers = _mm.tiles("Adoquin_Cafe", (0.26, 0.15, 0.10, 1), grout=(0.20, 0.17, 0.14, 1), size=(0.2, 0.1),
                        gap=0.004, rough=0.85, variation=0.15, mottle=0.4, bump=0.3, offset=0.5)
-    grass = _mm.new_mat("Potrero", (0.20, 0.30, 0.10, 1), rough=0.95)
+    grass = _dry_field("Pasto_Explanada")    # photos 2-3: light olive grass field to the sea, patchy, not flat neon
     yellow = _mm.new_mat("Linea_Amarilla", (0.80, 0.62, 0.08, 1), rough=0.7)
     g = MB(); g.box(-200, 200, -100, 60, -0.3, 0.0); g.build("Ground", [grass], coll='Site')
     st = MB(); st.box(-200, 200, 16.0, 26.0, 0.0, 0.02); st.build("Street", [M['asphalt']], coll='Site')
@@ -78,5 +94,92 @@ def build(M):
     ln.box(-20, 25, Y_BAL + 7.3, Y_BAL + 7.4, 0.03, 0.035)
     ln.build("Lineas_Parqueo", [yellow], coll='Site')
     # (no generic low blocks toward the sea: the photos show open grass field all the way to the water)
-    gr = MB(); gr.box(-200, 200, 48, 60, 0.0, 0.05); gr.build("Seafront", [M['lawn']], coll='Site')
+    gr = MB(); gr.box(-200, 200, 48, 60, 0.0, 0.05); gr.build("Seafront", [grass], coll='Site')
     sea = MB(); sea.box(-2000, 2000, 60, 3000, -0.4, -0.05); sea.build("Sea", [M['mar']], coll='Site')
+    # street lights along the drive (photo 2: a tall grey pole beside the parking deck)
+    lp = MB()
+    for x in range(-15, 30, 12):
+        lp.cylinder(x, 15.8, 0.0, 7.5, 0.07, 0.05, seg=12)
+        lp.box(x - 0.05, x + 0.05, 15.8 - 1.2, 15.8, 7.4, 7.5)
+        lp.box(x - 0.12, x + 0.12, 14.55, 14.85, 7.3, 7.42)
+    lp.build("Postes_Luz", [M['steel']], coll='Site')
+    _aerial_haze()
+
+
+HAZE_COLOR = (0.78, 0.80, 0.82)   # pale, slightly blue-grey: the horizon in photo 2 is milky
+HAZE_DIST = 350.0                 # metres for ~63 % haze; the parking deck (10-35 m) stays clear, the sea melts
+
+
+def _dry_field(name):
+    """Dry scrub ground: two tan/olive tones in large patches + fine speckle and bump; read from 10 m to 2 km."""
+    import bpy
+    m = bpy.data.materials.new(name)
+    m.use_nodes = True
+    nt = m.node_tree
+    b = nt.nodes["Principled BSDF"]
+    b.inputs["Roughness"].default_value = 0.95
+    big = nt.nodes.new("ShaderNodeTexNoise"); big.inputs["Scale"].default_value = 0.02; big.inputs["Detail"].default_value = 6
+    fine = nt.nodes.new("ShaderNodeTexNoise"); fine.inputs["Scale"].default_value = 3.0; fine.inputs["Detail"].default_value = 8
+    ramp = nt.nodes.new("ShaderNodeValToRGB")
+    ramp.color_ramp.elements[0].color = (0.13, 0.17, 0.07, 1)     # darker grass patches
+    ramp.color_ramp.elements[1].color = (0.30, 0.35, 0.16, 1)     # light olive grass (photo 3), never neon
+    ramp.color_ramp.elements[0].position, ramp.color_ramp.elements[1].position = 0.38, 0.62
+    mix = nt.nodes.new("ShaderNodeMix"); mix.data_type = 'RGBA'; mix.blend_type = 'MULTIPLY'
+    ca = next(i for i in mix.inputs if i.name == "A" and i.type == 'RGBA')
+    cb = next(i for i in mix.inputs if i.name == "B" and i.type == 'RGBA')
+    fac = next(i for i in mix.inputs if i.name == "Factor" and i.type == 'VALUE'); fac.default_value = 0.35
+    out = next(o for o in mix.outputs if o.name == "Result" and o.type == 'RGBA')
+    nt.links.new(big.outputs["Fac"], ramp.inputs["Fac"])
+    nt.links.new(ramp.outputs["Color"], ca)
+    nt.links.new(fine.outputs["Color"], cb)
+    nt.links.new(out, b.inputs["Base Color"])
+    bump = nt.nodes.new("ShaderNodeBump"); bump.inputs["Strength"].default_value = 0.3
+    nt.links.new(fine.outputs["Fac"], bump.inputs["Height"])
+    nt.links.new(bump.outputs["Normal"], b.inputs["Normal"])
+    return m
+
+
+def _aerial_haze():
+    """Aerial perspective on everything outside (collection 'Site'): mix each surface toward a pale emission by view
+    distance, 1 - exp(-d / HAZE_DIST).  Cheap (no volume) and the interior is untouched: at 5 m the mix is ~1 %."""
+    import bpy
+    site = bpy.data.collections.get("Site")
+    if site is None:
+        return
+    mats = {s.material for o in site.all_objects for s in getattr(o, "material_slots", []) if s.material}
+    for m in mats:
+        if not m.use_nodes or m.get("bruma"):
+            continue
+        nt = m.node_tree
+        outn = next((n for n in nt.nodes if n.bl_idname == "ShaderNodeOutputMaterial" and n.is_active_output), None)
+        if outn is None or not outn.inputs["Surface"].is_linked:
+            continue
+        surf = outn.inputs["Surface"].links[0].from_socket
+        cam = nt.nodes.new("ShaderNodeCameraData")
+        div = nt.nodes.new("ShaderNodeMath"); div.operation = 'DIVIDE'; div.inputs[1].default_value = -HAZE_DIST
+        ex = nt.nodes.new("ShaderNodeMath"); ex.operation = 'EXPONENT'
+        inv = nt.nodes.new("ShaderNodeMath"); inv.operation = 'SUBTRACT'; inv.inputs[0].default_value = 1.0
+        em = nt.nodes.new("ShaderNodeEmission")
+        em.inputs["Color"].default_value = (*HAZE_COLOR, 1); em.inputs["Strength"].default_value = 1.0
+        mx = nt.nodes.new("ShaderNodeMixShader")
+        nt.links.new(cam.outputs["View Distance"], div.inputs[0])
+        nt.links.new(div.outputs["Value"], ex.inputs[0])
+        nt.links.new(ex.outputs["Value"], inv.inputs[1])
+        nt.links.new(inv.outputs["Value"], mx.inputs["Fac"])
+        nt.links.new(surf, mx.inputs[1])
+        nt.links.new(em.outputs["Emission"], mx.inputs[2])
+        nt.links.new(mx.outputs["Shader"], outn.inputs["Surface"])
+        m["bruma"] = True
+
+
+def _weather(m):
+    """Stains and value variation on a flat concrete colour (large noise multiplied in): reads as weathered."""
+    nt = m.node_tree
+    b = next(n for n in nt.nodes if n.bl_idname == "ShaderNodeBsdfPrincipled")
+    base = tuple(b.inputs["Base Color"].default_value)
+    nz = nt.nodes.new("ShaderNodeTexNoise"); nz.inputs["Scale"].default_value = 0.6; nz.inputs["Detail"].default_value = 8
+    ramp = nt.nodes.new("ShaderNodeValToRGB")
+    ramp.color_ramp.elements[0].color = tuple(c * 0.7 for c in base[:3]) + (1,)
+    ramp.color_ramp.elements[1].color = tuple(min(c * 1.15, 1) for c in base[:3]) + (1,)
+    nt.links.new(nz.outputs["Fac"], ramp.inputs["Fac"])
+    nt.links.new(ramp.outputs["Color"], b.inputs["Base Color"])

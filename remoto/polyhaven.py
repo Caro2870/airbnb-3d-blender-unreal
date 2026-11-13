@@ -13,7 +13,12 @@ import urllib.request
 TEXTURES = ["large_floor_tiles_02", "large_grey_tiles", "oak_veneer_01", "walnut_veneer", "rough_linen",
             "waffle_pique_cotton", "poly_wool_herringbone", "white_plaster_02", "concrete_floor_02"]
 MODELS = ["potted_plant_01", "potted_plant_02", "potted_plant_04", "pachira_aquatica_01", "throw_pillows_01",
-          "desk_lamp_arm_01", "outdoor_table_chair_set_01", "ceramic_vase_01", "decorative_book_set_01"]
+          "desk_lamp_arm_01", "outdoor_table_chair_set_01", "ceramic_vase_01", "decorative_book_set_01",
+          # MVP decor library (CC0): plants, vases, books and a few modern furniture pieces
+          "calathea_orbifolia_01", "anthurium_botany_01", "fern_02", "ceramic_vase_02", "ceramic_vase_03",
+          "ceramic_vase_04", "book_encyclopedia_set_01", "Sofa_01", "ArmChair_01", "Ottoman_01", "CoffeeTable_01",
+          "coffee_table_round_01", "dining_chair_02", "Shelf_01",
+          "wicker_basket_02", "standing_picture_frame_02"]
 HDRIS = ["kloofendal_43d_clear_puresky"]
 UA = {"User-Agent": "openhouse-apartaestudio/1.0"}
 
